@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html class="light" lang="hi">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SereneCare | Patient Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          "primary":"#006978","primary-dim":"#005c69","primary-container":"#91eafd","on-primary-container":"#005763",
+          "secondary":"#605890","secondary-container":"#e5deff","on-secondary-container":"#534a81",
+          "tertiary":"#7b5745","tertiary-container":"#fdcdb6","on-tertiary-container":"#644332",
+          "background":"#fcf9f6","surface":"#fcf9f6",
+          "surface-container-low":"#f6f3f0","surface-container":"#f0eeea",
+          "surface-container-high":"#eae8e4","surface-container-highest":"#e4e2de","surface-container-lowest":"#ffffff",
+          "on-surface":"#323330","on-surface-variant":"#5f5f5c",
+          "outline-variant":"#b3b2ae","error":"#a83836","on-error-container":"#6e0a12",
+        },
+        fontFamily:{"headline":["Lexend"],"body":["Lexend"]},
+        borderRadius:{"DEFAULT":"1rem","lg":"2rem","xl":"3rem","full":"9999px"},
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family:'Lexend',sans-serif; }
+  .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
+  .deva { font-family:'Noto Sans Devanagari','Lexend',sans-serif; }
+  .pulse { animation:pulseA 2s cubic-bezier(.4,0,.6,1) infinite; }
+  @keyframes pulseA { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .pulse-ring { animation:pulseRing 1.8s ease infinite; }
+  @keyframes pulseRing { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.07)} }
+  .fade-up { animation:fadeUp .4s cubic-bezier(.22,1,.36,1); }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
+  .chat-in  { animation:chatI .3s cubic-bezier(.22,1,.36,1); }
+  @keyframes chatI { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:none} }
+  .chat-out { animation:chatO .3s cubic-bezier(.22,1,.36,1); }
+  @keyframes chatO { from{opacity:0;transform:translateX(8px)} to{opacity:1;transform:none} }
+  .wave-bar { animation:wave .5s ease-in-out infinite; transform-origin:bottom; }
+  @keyframes wave { 0%,100%{transform:scaleY(.25)} 50%{transform:scaleY(1)} }
+  .sos-btn { transition:all .18s cubic-bezier(.22,1,.36,1); }
+  .sos-btn:active { transform:scale(.92); }
+  .big-btn  { transition:all .18s cubic-bezier(.22,1,.36,1); }
+  .big-btn:active { transform:scale(.95); }
+  .reminder-card { transition:all .2s cubic-bezier(.22,1,.36,1); cursor:pointer; }
+  .reminder-card:hover { transform:translateY(-2px); box-shadow:0 12px 32px -8px rgba(0,0,0,.1); }
+  ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:#b3b2ae;border-radius:9px}
+</style>
+</head>
+
+<body class="bg-background text-on-surface min-h-screen">
+
+<!-- ===== SOS FULLSCREEN OVERLAY ===== -->
+<div id="sos-overlay" class="fixed inset-0 z-[400] bg-error flex flex-col items-center justify-center gap-6 hidden">
+  <div class="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center pulse-ring">
+    <span class="material-symbols-outlined text-white" style="font-size:56px;font-variation-settings:'FILL' 1;">emergency</span>
+  </div>
+  <div class="text-center px-8">
+    <p class="text-4xl font-black text-white deva mb-1">SOS भेज दिया!</p>
+    <p class="text-3xl font-black text-white mb-3">SOS Sent!</p>
+    <p class="text-xl text-white/80 deva" id="sos-caregiver-msg">Sarah को सूचित किया जा रहा है…</p>
+    <p class="text-lg text-white/70">Your caregiver has been alerted.</p>
+  </div>
+  <div class="flex items-center gap-3 bg-white/15 rounded-full px-8 py-4 mt-2">
+    <span class="w-3 h-3 bg-white rounded-full pulse"></span>
+    <span class="text-white font-bold text-lg">Connecting to caregiver…</span>
+  </div>
+  <button onclick="closeSOS()" class="mt-4 bg-white/20 hover:bg-white/30 text-white font-bold px-10 py-4 rounded-full text-lg transition-all active:scale-95 deva">
+    मैं ठीक हूँ — I'm OK / Cancel
+  </button>
+</div>
+
+<!-- ===== HEADER ===== -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-5 h-20 bg-white/80 backdrop-blur-xl shadow-sm">
+  <div class="flex items-center gap-3">
+    <div class="w-11 h-11 bg-primary rounded-full flex items-center justify-center shadow-md">
+      <span class="material-symbols-outlined text-white text-2xl" style="font-variation-settings:'FILL' 1;">shield</span>
+    </div>
+    <div>
+      <h1 class="text-xl font-black text-primary leading-none">CareWatch</h1>
+      <p class="text-xs text-on-surface-variant font-medium deva" id="hdr-hindi-greeting">नमस्ते!</p>
+    </div>
+  </div>
+  <div class="flex items-center gap-3">
+    <!-- Monitoring badge -->
+    <div class="flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-4 py-2">
+      <span class="w-2 h-2 bg-green-500 rounded-full pulse"></span>
+      <span class="text-sm font-bold text-green-700">Being Monitored</span>
+    </div>
+    <!-- Patient avatar -->
+    <div class="w-11 h-11 rounded-full bg-primary-container flex items-center justify-center font-black text-primary text-lg" id="hdr-avatar">?</div>
+  </div>
+</header>
+
+<!-- ===== MAIN ===== -->
+<main class="pt-24 pb-32 px-4 md:px-8 max-w-screen-lg mx-auto">
+
+  <!-- Greeting -->
+  <section class="mb-8 fade-up">
+    <h1 class="text-3xl md:text-5xl font-black text-on-surface tracking-tight leading-tight">
+      Good morning, <span id="patient-name-greeting" class="text-primary">Friend</span>.
+    </h1>
+    <p class="text-xl text-on-surface-variant font-medium deva mt-1" id="patient-hindi-sub">आज का दिन अच्छा रहे।</p>
+  </section>
+
+  <!-- MONITORING NOTICE (replaces camera) -->
+  <div class="bg-primary-container/20 border border-primary/15 rounded-xl p-5 mb-4 flex items-center gap-4 fade-up">
+    <div class="w-12 h-12 bg-primary rounded-full flex items-center justify-center flex-shrink-0 shadow">
+      <span class="material-symbols-outlined text-white text-2xl" style="font-variation-settings:'FILL' 1;">videocam</span>
+    </div>
+    <div>
+      <p class="font-bold text-on-primary-container text-base">You are being monitored for your safety.</p>
+      <p class="text-sm deva text-on-primary-container/70 mt-0.5">आपकी सुरक्षा के लिए आपकी निगरानी की जा रही है।</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2 flex-shrink-0">
+      <span class="w-2 h-2 bg-green-500 rounded-full pulse"></span>
+      <span class="text-xs font-bold text-green-700">ACTIVE</span>
+    </div>
+  </div>
+
+  <!-- AI HEALTH RISK NOTIFICATION BANNER (shown on risk detection) -->
+  <div id="risk-banner" class="hidden rounded-xl p-5 mb-4 fade-up border-2">
+    <div class="flex items-start gap-4">
+      <div class="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 shadow" id="risk-banner-icon-wrap">
+        <span class="material-symbols-outlined text-2xl" style="font-variation-settings:'FILL' 1;" id="risk-banner-icon">favorite</span>
+      </div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <p class="font-black text-base" id="risk-banner-title">Health Alert</p>
+          <span class="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full" id="risk-banner-badge">—</span>
+        </div>
+        <p class="text-base deva font-semibold leading-relaxed" id="risk-banner-hindi">—</p>
+        <p class="text-sm mt-1 opacity-70" id="risk-banner-en">—</p>
+        <div class="flex items-center gap-2 mt-2">
+          <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">AI Confidence:</span>
+          <div class="flex-1 h-1.5 bg-black/10 rounded-full overflow-hidden">
+            <div class="h-full rounded-full transition-all duration-700" id="risk-banner-bar" style="width:0%"></div>
+          </div>
+          <span class="text-[10px] font-bold" id="risk-banner-conf">—</span>
+        </div>
+      </div>
+      <button onclick="dismissRiskBanner()" class="text-current opacity-40 hover:opacity-70 transition-opacity flex-shrink-0">
+        <span class="material-symbols-outlined text-lg">close</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- ===== LEFT 8 COLS ===== -->
+    <div class="lg:col-span-8 space-y-6">
+
+      <!-- AI CONVERSATION -->
+      <div class="bg-white rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] overflow-hidden border border-outline-variant/10 flex flex-col" style="height:460px">
+        <div class="p-5 bg-surface-container-low flex items-center justify-between border-b border-outline-variant/10">
+          <div class="flex items-center gap-3">
+            <div class="w-11 h-11 bg-primary rounded-full flex items-center justify-center shadow">
+              <span class="material-symbols-outlined text-white" style="font-variation-settings:'FILL' 1;">smart_toy</span>
+            </div>
+            <div>
+              <h3 class="font-bold text-on-surface text-base">Serene AI — सेरेन साथी</h3>
+              <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 bg-green-500 rounded-full" id="ai-dot"></span>
+                <span class="text-xs font-bold text-green-600 uppercase tracking-widest" id="ai-lbl">Active & Ready</span>
+              </div>
+            </div>
+          </div>
+          <!-- wave bars (show when speaking) -->
+          <div id="ai-wave" class="hidden items-center gap-0.5 h-6">
+            <div class="w-1 h-3 bg-primary rounded-full wave-bar" style="animation-delay:0s"></div>
+            <div class="w-1 h-5 bg-primary rounded-full wave-bar" style="animation-delay:.1s"></div>
+            <div class="w-1 h-4 bg-primary rounded-full wave-bar" style="animation-delay:.2s"></div>
+            <div class="w-1 h-6 bg-primary rounded-full wave-bar" style="animation-delay:.05s"></div>
+            <div class="w-1 h-3 bg-primary rounded-full wave-bar" style="animation-delay:.15s"></div>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="flex-1 p-5 overflow-y-auto space-y-4" id="chat-thread"></div>
+
+        <!-- Caregiver message banner -->
+        <div id="cg-msg-banner" class="hidden mx-4 mb-2 bg-secondary-container/40 border border-secondary/20 rounded-xl px-4 py-3 flex items-center gap-3">
+          <span class="material-symbols-outlined text-secondary" style="font-variation-settings:'FILL' 1;">mark_chat_read</span>
+          <div>
+            <p class="text-xs font-bold text-on-secondary-container uppercase tracking-wider mb-0.5">Message from <span id="cg-name-lbl">Caregiver</span></p>
+            <p class="text-sm font-semibold text-on-secondary-container" id="cg-msg-text">—</p>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div class="p-4 bg-surface-container-low/60 border-t border-outline-variant/10">
+          <div class="flex gap-3 items-center">
+            <input id="chat-inp" type="text" placeholder="Type or speak… / बोलें या लिखें…"
+              class="flex-1 bg-surface-container-lowest border-none py-4 px-5 rounded-full text-base shadow-inner focus:ring-2 focus:ring-primary/20 outline-none"
+              onkeydown="if(event.key==='Enter')sendChat()"/>
+            <button onclick="triggerVoice()" id="mic-btn"
+              class="big-btn w-12 h-12 bg-secondary-container text-secondary rounded-full flex items-center justify-center hover:bg-secondary-container/70 transition-all flex-shrink-0 shadow">
+              <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;" id="mic-icon">mic</span>
+            </button>
+            <button onclick="sendChat()"
+              class="big-btn w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center shadow-lg flex-shrink-0">
+              <span class="material-symbols-outlined">send</span>
+            </button>
+          </div>
+          <!-- Hindi quick chips -->
+          <div class="flex flex-wrap gap-2 mt-3">
+            <button onclick="doCmd('मदद चाहिए')" class="text-sm deva font-semibold bg-error/10 text-error border border-error/20 px-4 py-2 rounded-full hover:bg-error/20 transition-all active:scale-95">🆘 मदद चाहिए</button>
+            <button onclick="doCmd('पानी चाहिए')" class="text-sm deva font-semibold bg-primary-container/30 text-on-primary-container border border-primary/10 px-4 py-2 rounded-full hover:bg-primary-container/50 transition-all active:scale-95">💧 पानी चाहिए</button>
+            <button onclick="doCmd('दवाई')" class="text-sm deva font-semibold bg-secondary-container text-on-secondary-container border border-secondary/10 px-4 py-2 rounded-full hover:bg-secondary-container/70 transition-all active:scale-95">💊 दवाई</button>
+            <button onclick="doCmd('ठीक हूँ')" class="text-sm deva font-semibold bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-full hover:bg-green-100 transition-all active:scale-95">✅ ठीक हूँ</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- DAILY REMINDERS -->
+      <div class="bg-surface-container-low rounded-xl p-6 shadow-sm border border-outline-variant/10">
+        <div class="flex justify-between items-center mb-5">
+          <h2 class="text-xl font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1;">event_note</span>
+            Today's Schedule
+          </h2>
+          <span class="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-sm font-bold" id="tasks-left">3 Tasks</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="reminders-grid"></div>
+      </div>
+
+    </div>
+
+    <!-- ===== RIGHT 4 COLS ===== -->
+    <div class="lg:col-span-4 space-y-6">
+
+      <!-- SOS BUTTON -->
+      <div class="bg-error/5 border-2 border-error/10 rounded-xl p-6 text-center">
+        <h2 class="text-xl font-bold text-on-error-container mb-1 deva">तत्काल सहायता?</h2>
+        <h2 class="text-base font-bold text-on-error-container mb-5">Need Immediate Help?</h2>
+        <div class="relative flex justify-center mb-5">
+          <div class="absolute w-44 h-44 rounded-full border-4 border-error/15 pulse-ring"></div>
+          <div class="absolute w-36 h-36 rounded-full border-4 border-error/25 pulse-ring" style="animation-delay:.4s"></div>
+          <button id="sos-btn" onclick="triggerSOS()"
+            class="sos-btn relative w-28 h-28 bg-gradient-to-br from-error to-[#67040d] text-white rounded-full flex flex-col items-center justify-center gap-1 shadow-2xl shadow-error/40 z-10 hover:scale-105">
+            <span class="material-symbols-outlined text-5xl" style="font-variation-settings:'FILL' 1;">sos</span>
+            <span class="text-sm font-black">HELP!</span>
+          </button>
+        </div>
+        <p class="text-sm font-bold text-on-error-container/60 deva">आपका देखभालकर्ता तुरंत सूचित होगा</p>
+        <p class="text-xs text-on-error-container/50 mt-1">Caregiver alerted immediately</p>
+      </div>
+
+      <!-- QUICK HELP -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/10">
+        <div class="px-5 py-4 bg-surface-container-low border-b border-outline-variant/10">
+          <h2 class="text-base font-bold text-on-surface deva">त्वरित सहायता • Quick Help</h2>
+        </div>
+        <div class="p-4 space-y-3">
+          <button onclick="quickAction('call')"
+            class="big-btn w-full flex items-center gap-4 bg-primary-container/30 hover:bg-primary-container/50 text-on-primary-container rounded-xl p-4 transition-all text-left">
+            <div class="w-12 h-12 bg-primary rounded-full flex items-center justify-center shadow flex-shrink-0">
+              <span class="material-symbols-outlined text-white text-2xl" style="font-variation-settings:'FILL' 1;">call</span>
+            </div>
+            <div>
+              <p class="text-base font-black leading-tight">Call Caregiver</p>
+              <p class="text-sm deva text-on-primary-container/70">देखभालकर्ता को कॉल करें</p>
+            </div>
+          </button>
+          <button onclick="quickAction('help')"
+            class="big-btn w-full flex items-center gap-4 bg-secondary-container/40 hover:bg-secondary-container/60 text-on-secondary-container rounded-xl p-4 transition-all text-left">
+            <div class="w-12 h-12 bg-secondary rounded-full flex items-center justify-center shadow flex-shrink-0">
+              <span class="material-symbols-outlined text-white text-2xl" style="font-variation-settings:'FILL' 1;">waving_hand</span>
+            </div>
+            <div>
+              <p class="text-base font-black leading-tight">Need Help</p>
+              <p class="text-sm deva text-on-secondary-container/70">मुझे मदद चाहिए</p>
+            </div>
+          </button>
+          <button onclick="quickAction('fine')"
+            class="big-btn w-full flex items-center gap-4 bg-green-50 hover:bg-green-100 text-green-900 rounded-xl p-4 transition-all text-left border border-green-200">
+            <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center shadow flex-shrink-0">
+              <span class="material-symbols-outlined text-white text-2xl" style="font-variation-settings:'FILL' 1;">thumb_up</span>
+            </div>
+            <div>
+              <p class="text-base font-black leading-tight">I'm Fine ✓</p>
+              <p class="text-sm deva text-green-700">मैं ठीक हूँ</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- Mobile bottom nav -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-5 pt-3 md:hidden bg-white/80 backdrop-blur-lg rounded-t-[2.5rem] shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.12)]">
+  <a class="flex flex-col items-center bg-cyan-600 text-white rounded-[2rem] px-5 py-2" href="/patient"><span class="material-symbols-outlined text-xl">home</span><span class="text-xs mt-0.5">Home</span></a>
+  <a class="flex flex-col items-center text-slate-500 px-4 py-2" href="#"><span class="material-symbols-outlined text-xl">smart_toy</span><span class="text-xs mt-0.5">AI Chat</span></a>
+  <button onclick="triggerSOS()" class="flex flex-col items-center text-error px-4 py-2">
+    <span class="material-symbols-outlined text-xl" style="font-variation-settings:'FILL' 1;">sos</span>
+    <span class="text-xs mt-0.5 font-black">SOS</span>
+  </button>
+  <a class="flex flex-col items-center text-slate-500 px-4 py-2" href="#"><span class="material-symbols-outlined text-xl">event_note</span><span class="text-xs mt-0.5">Schedule</span></a>
+</nav>
+
+<script>
+/* ===== USER DATA ===== */
+const U = JSON.parse(localStorage.getItem('serenecare_user') || '{}');
+const patientName   = U.patientName   || 'Friend';
+const patientAge    = U.patientAge    || '';
+const caregiverName = U.caregiverName || 'Caregiver';
+
+function initUI() {
+  document.getElementById('patient-name-greeting').textContent = patientName;
+  document.getElementById('patient-hindi-sub').textContent = `${patientName} जी, आज का दिन अच्छा रहे।`;
+  document.getElementById('hdr-hindi-greeting').textContent = `नमस्ते, ${patientName} जी!`;
+  document.getElementById('hdr-avatar').textContent = patientName.charAt(0).toUpperCase();
+  document.getElementById('sos-caregiver-msg').textContent = `${caregiverName} को सूचित किया जा रहा है…`;
+  document.getElementById('cg-name-lbl').textContent = caregiverName;
+}
+initUI();
+
+/* ===== SOCKET ===== */
+const socket = io();
+socket.on('connect',           () => setAI('ready'));
+socket.on('disconnect',        () => setAI('offline'));
+socket.on('caregiver_message', m  => showCaregiverMsg(m));
+
+/* ===== HEALTH RISK NOTIFICATION (from ML model via server) ===== */
+socket.on('patient_risk_notification', r => showRiskBanner(r));
+
+const RISK_BANNER_CFG = {
+  'Heart Attack Risk': {
+    bg:'#fee2e2', border:'#fca5a5', iconBg:'#ef4444',
+    icon:'emergency', badgeBg:'#fee2e2', badgeColor:'#a83836',
+    badge:'CRITICAL', barColor:'#ef4444',
+    title:'Heart Risk Alert',
+    en:'Abnormal movement patterns detected. Please stay calm and alert caregiver.',
+  },
+  'Panic Attack': {
+    bg:'#fff7ed', border:'#fed7aa', iconBg:'#f97316',
+    icon:'psychology', badgeBg:'#fff7ed', badgeColor:'#c2410c',
+    badge:'HIGH', barColor:'#f97316',
+    title:'Panic Alert',
+    en:'Take slow deep breaths. You are safe. Caregiver has been notified.',
+  },
+};
+
+function showRiskBanner(r) {
+  const cfg = RISK_BANNER_CFG[r.class_name];
+  if (!cfg) return;   // Normal or False Alarm — no patient banner
+
+  const banner = document.getElementById('risk-banner');
+  banner.style.background  = cfg.bg;
+  banner.style.borderColor = cfg.border;
+
+  const iw = document.getElementById('risk-banner-icon-wrap');
+  iw.style.background = cfg.iconBg;
+  const ico = document.getElementById('risk-banner-icon');
+  ico.textContent = cfg.icon;
+  ico.style.color = 'white';
+
+  document.getElementById('risk-banner-title').textContent = cfg.title;
+  document.getElementById('risk-banner-title').style.color = cfg.badgeColor;
+
+  const badge = document.getElementById('risk-banner-badge');
+  badge.textContent        = cfg.badge;
+  badge.style.background   = cfg.badgeBg;
+  badge.style.color        = cfg.badgeColor;
+
+  document.getElementById('risk-banner-hindi').textContent = r.hindi_msg || '';
+  document.getElementById('risk-banner-hindi').style.color = cfg.badgeColor;
+  document.getElementById('risk-banner-en').textContent    = cfg.en;
+
+  document.getElementById('risk-banner-bar').style.width       = (r.confidence || 0) + '%';
+  document.getElementById('risk-banner-bar').style.background  = cfg.barColor;
+  document.getElementById('risk-banner-conf').textContent      = (r.confidence || 0) + '%';
+  document.getElementById('risk-banner-conf').style.color      = cfg.badgeColor;
+
+  banner.classList.remove('hidden');
+
+  // Also add to chat thread and speak
+  addAIMsg(r.hindi_msg || '', cfg.en);
+  speak(r.hindi_msg || '');
+
+  // Auto-dismiss after 30 seconds unless critical
+  if (r.severity !== 'critical') {
+    setTimeout(dismissRiskBanner, 30000);
+  }
+}
+
+function dismissRiskBanner() {
+  document.getElementById('risk-banner').classList.add('hidden');
+}
+
+/* ===== INIT CHAT ===== */
+window.addEventListener('DOMContentLoaded', () => {
+  addAIMsg(`नमस्ते ${patientName} जी! मैं आपकी देखभाल के लिए यहाँ हूँ।`, `Hello ${patientName}! I am here to take care of you today.`);
+  renderReminders();
+});
+
+/* ===== SOS ===== */
+function triggerSOS() {
+  document.getElementById('sos-overlay').classList.remove('hidden');
+  fetch('/test_alert', { method:'POST' });
+  socket.emit('sos_trigger', { patient: patientName, timestamp: new Date().toLocaleString() });
+  addAIMsg(`🚨 SOS भेजा गया! ${caregiverName} को सूचित किया जा रहा है।`, `SOS sent! ${caregiverName} has been alerted.`);
+}
+function closeSOS() {
+  document.getElementById('sos-overlay').classList.add('hidden');
+  addAIMsg('ठीक है, SOS रद्द कर दिया गया। मुझे खुशी है कि आप ठीक हैं!', 'SOS cancelled. Glad you\'re okay!');
+}
+
+/* ===== QUICK ACTIONS ===== */
+const QUICK = {
+  call: { hi:`${caregiverName} को कॉल किया जा रहा है।`,          en:`Calling ${caregiverName} for you.`, alert:true },
+  help: { hi:'मदद के लिए सूचना भेजी गई है। वे जल्द आएंगे।',       en:'Help has been requested. They\'ll be with you soon.', alert:true },
+  fine: { hi:'बहुत अच्छा! आप ठीक हैं, यह जानकर अच्छा लगा।',      en:'Wonderful! Glad to hear you\'re doing well.', alert:false }
+};
+function quickAction(type) {
+  const r = QUICK[type];
+  addUserMsg(type==='call'?'Call Caregiver':type==='help'?'Need Help':'I\'m Fine');
+  addAIMsg(r.hi, r.en);
+  speak(r.hi);
+  if (r.alert) fetch('/test_alert', { method:'POST' });
+}
+
+/* ===== HINDI VOICE INTERACTION ENGINE ===== */
+let recognition = null;
+let isListening = false;
+
+// Extended Hindi response dictionary — contextual & natural
+const VOICE_RESPONSES = {
+  // Help / Emergency
+  'मदद':          { hi:`${caregiverName} को तुरंत सूचित किया जा रहा है। शांत रहें, मदद आ रही है।`, en:'Alerting caregiver immediately. Help is on the way.', alert:true },
+  'मदद चाहिए':   { hi:`${caregiverName} को तुरंत सूचित किया जा रहा है। शांत रहें, मदद आ रही है।`, en:'Alerting caregiver immediately. Help is on the way.', alert:true },
+  'बचाओ':         { hi:`आपकी मदद के लिए ${caregiverName} को अभी बुलाया जा रहा है।`,                 en:'Calling your caregiver right now!', alert:true },
+  'emergency':    { hi:`आपातकाल की सूचना मिली। ${caregiverName} को तुरंत बुलाया जा रहा है।`,        en:'Emergency detected. Caregiver alerted.', alert:true },
+
+  // Pain
+  'दर्द':         { hi:`दर्द की सूचना मिली। ${caregiverName} को तुरंत सूचित किया जा रहा है।`,      en:'Pain reported. Caregiver has been notified.', alert:true },
+  'दर्द हो रहा': { hi:`दर्द की सूचना मिली। ${caregiverName} को तुरंत सूचित किया जा रहा है।`,       en:'Pain reported. Caregiver alerted.', alert:true },
+  'चोट':          { hi:`चोट की सूचना मिली। कृपया हिलें नहीं। ${caregiverName} आ रहे हैं।`,           en:'Injury reported. Please stay still. Caregiver coming.', alert:true },
+
+  // Water / food
+  'पानी':         { hi:'ठीक है, पानी लाया जाएगा। थोड़ी देर प्रतीक्षा करें।',                         en:'Water will be brought to you shortly.', alert:false },
+  'पानी चाहिए':  { hi:'ठीक है, पानी लाया जाएगा। थोड़ी देर प्रतीक्षा करें।',                          en:'Water will be brought to you.', alert:false },
+  'प्यास':        { hi:'आपको पानी चाहिए। बस एक पल रुकिए।',                                            en:'Water is being arranged for you.', alert:false },
+  'खाना':         { hi:'खाने का समय हो गया है। खाना तैयार किया जा रहा है।',                           en:'Meal time! Food is being prepared.', alert:false },
+  'भूख':          { hi:'आपको भूख लगी है। खाने की व्यवस्था की जा रही है।',                             en:'You\'re hungry. Arranging food for you.', alert:false },
+
+  // Medicine
+  'दवाई':         { hi:'दवाई का समय याद दिला दिया गया। देखभालकर्ता को सूचित किया गया है।',          en:'Medicine reminder noted. Caregiver informed.', alert:false },
+  'दवा':          { hi:'दवाई का समय याद दिला दिया गया।',                                               en:'Medicine reminder noted.', alert:false },
+  'गोली':         { hi:'दवाई की गोली लेने का समय हो गया है।',                                          en:'Time to take your medicine tablet.', alert:false },
+
+  // Bathroom
+  'बाथरूम':      { hi:'बाथरूम जाते समय सावधान रहें। किसी सहारे का उपयोग करें।',                     en:'Please be careful going to the bathroom. Use support.', alert:false },
+  'टॉयलेट':      { hi:'बाथरूम जाते समय सावधान रहें।',                                                  en:'Be careful going to the bathroom.', alert:false },
+
+  // Temperature / comfort
+  'ठंड':          { hi:'आपको ठंड लग रही है। एक कंबल लाया जाएगा।',                                    en:'You\'re feeling cold. A blanket will be brought.', alert:false },
+  'गर्मी':        { hi:'आपको गर्मी लग रही है। पंखा चालू किया जा रहा है।',                             en:'Feeling hot. Fan being switched on.', alert:false },
+
+  // Sleep
+  'नींद':         { hi:'आराम करना बहुत ज़रूरी है। आप सो जाइए, हम निगरानी करते रहेंगे।',              en:'Rest is important. Go ahead and sleep, we\'ll keep watch.', alert:false },
+  'थकान':        { hi:'थकान महसूस हो रही है तो आराम करें। हम यहाँ हैं।',                             en:'You\'re tired. Please rest. We\'re here.', alert:false },
+  'थका':         { hi:'थकान महसूस हो रही है तो आराम करें।',                                            en:'Please rest if you\'re tired.', alert:false },
+
+  // Fine / OK
+  'ठीक हूँ':     { hi:'बहुत अच्छा! आप ठीक हैं यह जानकर बहुत खुशी हुई।',                             en:'Wonderful! So glad to hear you\'re well.', alert:false },
+  'ठीक':         { hi:'बहुत अच्छा! हम आपकी निगरानी करते रहेंगे।',                                    en:'Great! We\'ll keep monitoring you.', alert:false },
+  'अच्छा':       { hi:'बहुत अच्छा! सब कुछ ठीक है जानकर खुशी हुई।',                                   en:'Great to hear everything is fine!', alert:false },
+
+  // Greeting
+  'नमस्ते':      { hi:`नमस्ते ${patientName} जी! मैं Serene हूँ, आपका AI साथी। आप कैसे हैं?`,        en:`Hello ${patientName}! I\'m Serene, your AI companion.`, alert:false },
+  'हैलो':        { hi:`नमस्ते ${patientName} जी! मैं यहाँ हूँ। बताइए, क्या सेवा करूँ?`,              en:'Hello! I\'m here. How can I help you?', alert:false },
+
+  // Caregiver / call
+  'फोन':         { hi:`${caregiverName} को फोन किया जा रहा है।`,                                       en:`Calling ${caregiverName} for you.`, alert:true },
+  'बुलाओ':       { hi:`${caregiverName} को अभी बुलाया जा रहा है।`,                                     en:`Calling ${caregiverName} right now.`, alert:true },
+  'sarah':       { hi:`Sarah को अभी सूचित किया जा रहा है।`,                                            en:'Alerting Sarah now.', alert:true },
+
+  // Default
+  'default':     { hi:'आपकी बात सुनी गई। मैं हमेशा आपकी मदद के लिए यहाँ हूँ।',                      en:'I heard you. I\'m always here to help.', alert:false }
+};
+
+function matchResponse(transcript) {
+  const t = transcript.trim().toLowerCase();
+  // exact key match first
+  for (const [key, val] of Object.entries(VOICE_RESPONSES)) {
+    if (key === 'default') continue;
+    if (t.includes(key)) return val;
+  }
+  return VOICE_RESPONSES['default'];
+}
+
+function setSttStatus(state) {
+  const dot = document.getElementById('stt-dot');
+  const lbl = document.getElementById('stt-lbl');
+  const icon = document.getElementById('mic-main-icon');
+  const btn  = document.getElementById('mic-main-btn');
+  const r1 = document.getElementById('ring1');
+  const r2 = document.getElementById('ring2');
+  if (state === 'listening') {
+    dot.style.background = '#a78bfa'; lbl.textContent = 'Listening…'; lbl.style.color = '#605890';
+    icon.textContent = 'stop';
+    btn.style.background = 'linear-gradient(135deg, #605890, #a78bfa)';
+    r1.style.borderColor = 'rgba(167,139,250,.4)';
+    r2.style.borderColor = 'rgba(167,139,250,.6)';
+    document.getElementById('v-hint-hi').textContent = 'सुन रहे हैं… बोलें';
+    document.getElementById('v-hint-en').textContent = 'Listening… speak now';
+  } else if (state === 'speaking') {
+    dot.style.background = '#f59e0b'; lbl.textContent = 'Speaking…'; lbl.style.color = '#b45309';
+    icon.textContent = 'volume_up';
+    btn.style.background = 'linear-gradient(135deg, #006978, #91eafd)';
+    r1.style.borderColor = 'rgba(0,105,120,.3)';
+    r2.style.borderColor = 'rgba(0,105,120,.5)';
+    document.getElementById('v-hint-hi').textContent = 'Serene बोल रहा है…';
+    document.getElementById('v-hint-en').textContent = 'Serene is speaking…';
+  } else {
+    dot.style.background = '#22c55e'; lbl.textContent = 'Ready'; lbl.style.color = '#15803d';
+    icon.textContent = 'mic';
+    btn.style.background = '';
+    r1.style.borderColor = '';
+    r2.style.borderColor = '';
+    document.getElementById('v-hint-hi').textContent = 'बोलने के लिए दबाएँ';
+    document.getElementById('v-hint-en').textContent = 'Tap to speak in Hindi';
+  }
+}
+
+function toggleListening() {
+  if (isListening) {
+    stopListening();
+  } else {
+    startListening();
+  }
+}
+
+function startListening() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    // Fallback if browser doesn't support STT — still works via text input
+    addAIMsg('आपका ब्राउज़र आवाज़ पहचान का समर्थन नहीं करता।', 'Your browser does not support voice recognition. Please type instead.');
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.lang = 'hi-IN';          // Hindi India
+  recognition.continuous = false;
+  recognition.interimResults = true;   // show partial results live
+  recognition.maxAlternatives = 3;
+
+  isListening = true;
+  setSttStatus('listening');
+  setAI('listening');
+
+  document.getElementById('transcript-box').classList.remove('hidden');
+  document.getElementById('transcript-live').textContent = '…';
+  document.getElementById('response-box').classList.add('hidden');
+
+  recognition.onresult = (e) => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final += t;
+      else interim += t;
+    }
+    document.getElementById('transcript-live').textContent = final || interim || '…';
+    if (final) handleFinalTranscript(final.trim());
+  };
+
+  recognition.onerror = (e) => {
+    console.warn('STT error:', e.error);
+    if (e.error === 'no-speech') {
+      document.getElementById('transcript-live').textContent = 'कोई आवाज़ नहीं सुनी। फिर कोशिश करें।';
+    }
+    stopListening();
+  };
+
+  recognition.onend = () => {
+    if (isListening) stopListening();
+  };
+
+  recognition.start();
+}
+
+function stopListening() {
+  isListening = false;
+  if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
+  setSttStatus('ready');
+  setAI('ready');
+}
+
+function handleFinalTranscript(transcript) {
+  stopListening();
+  document.getElementById('transcript-live').textContent = transcript;
+
+  // Add to chat thread as user message
+  addUserMsg(transcript);
+
+  // Match response
+  const resp = matchResponse(transcript);
+
+  // Show in voice panel
+  const respBox = document.getElementById('response-box');
+  const respWave = document.getElementById('resp-wave');
+  respBox.classList.remove('hidden');
+  document.getElementById('response-hi').textContent = resp.hi;
+  document.getElementById('response-en').textContent = resp.en || '';
+  respWave.classList.remove('hidden'); respWave.classList.add('flex');
+
+  setSttStatus('speaking');
+  setAI('speaking');
+
+  // Add to chat thread as AI message
+  setTimeout(() => {
+    addAIMsg(resp.hi, resp.en);
+    speak(resp.hi, () => {
+      setSttStatus('ready');
+      setAI('ready');
+      respWave.classList.add('hidden'); respWave.classList.remove('flex');
+    });
+    if (resp.alert) fetch('/test_alert', { method:'POST' });
+  }, 300);
+}
+
+/* ===== TRIGGER VOICE (also used by mic-btn in chat) ===== */
+function triggerVoice() {
+  toggleListening();
+}
+
+/* ===== CHAT ===== */
+const HINDI_R = {
+  'मदद चाहिए':      { hi:`${caregiverName} को तुरंत सूचित किया जा रहा है।`,     en:'Alerting your caregiver immediately.', alert:true },
+  'पानी चाहिए':     { hi:'ठीक है, पानी लाया जाएगा।',                               en:'Water will be arranged for you.', alert:false },
+  'दवाई':           { hi:'दवाई याद दिलाई गई।',                                     en:'Medicine reminder noted.', alert:true },
+  'दर्द हो रहा है': { hi:`दर्द की सूचना मिली। ${caregiverName} को बुलाया जा रहा है।`, en:'Pain reported. Caregiver called.', alert:true },
+  'ठीक हूँ':         { hi:'बहुत अच्छा! हम आपकी निगरानी कर रहे हैं।',               en:'Glad to hear that!', alert:false },
+  'default':        { hi:'आपकी बात सुनी गई। मैं यहाँ हूँ।',                         en:'I heard you. I\'m here to help.', alert:false }
+};
+
+function doCmd(cmd) {
+  addUserMsg(cmd);
+  const r = HINDI_R[cmd] || HINDI_R['default'];
+  setTimeout(() => { addAIMsg(r.hi, r.en); speak(r.hi); if(r.alert) fetch('/test_alert',{method:'POST'}); }, 400);
+}
+
+function sendChat() {
+  const inp = document.getElementById('chat-inp');
+  const msg = inp.value.trim(); if (!msg) return;
+  inp.value = '';
+  addUserMsg(msg);
+  setAI('listening');
+
+  // Send patient message to caregiver dashboard via WebSocket
+  const payload = {
+    message:   msg,
+    sender:    patientName,
+    timestamp: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+    fromPatient: true,
+  };
+  socket.emit('patient_message', payload);
+
+  // AI responds locally
+  const lower = msg.toLowerCase();
+  let resp = HINDI_R['default'];
+  for (const [k,v] of Object.entries(HINDI_R)) {
+    if (k!=='default' && msg.includes(k)) { resp=v; break; }
+    if (k!=='default' && lower.includes(k.toLowerCase())) { resp=v; break; }
+  }
+  setTimeout(() => {
+    addAIMsg(resp.hi, resp.en);
+    speak(resp.hi);
+    if (resp.alert) fetch('/test_alert',{method:'POST'});
+  }, 600);
+}
+
+function addUserMsg(msg) {
+  const el = document.getElementById('chat-thread');
+  const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const d = document.createElement('div');
+  d.className = 'flex justify-end chat-out';
+  d.innerHTML = `<div class="bg-surface-container-high rounded-l-2xl rounded-br-2xl px-5 py-3 max-w-[80%]">
+    <p class="text-base text-on-surface deva">${esc(msg)}</p>
+    <p class="text-[11px] text-on-surface-variant mt-1">${patientName} • ${t}</p>
+  </div>`;
+  el.appendChild(d); el.scrollTop = el.scrollHeight;
+}
+
+function addAIMsg(hi, en) {
+  const el = document.getElementById('chat-thread');
+  const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const d = document.createElement('div');
+  d.className = 'flex items-start gap-3 max-w-[85%] chat-in';
+  d.innerHTML = `<div class="w-10 h-10 bg-primary-container/40 rounded-full flex-shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1;">smart_toy</span></div>
+    <div class="bg-primary-container/20 rounded-r-2xl rounded-bl-2xl px-5 py-4">
+      <p class="text-base text-on-primary-container leading-relaxed deva">${esc(hi)}</p>
+      ${en?`<p class="text-sm text-on-primary-container/70 mt-1">${esc(en)}</p>`:''}
+      <p class="text-[11px] text-on-surface-variant mt-1.5">Serene • ${t}</p>
+    </div>`;
+  el.appendChild(d); el.scrollTop = el.scrollHeight;
+  setAI('speaking');
+  setTimeout(() => setAI('ready'), 3500);
+}
+
+function showCaregiverMsg(m) {
+  const banner = document.getElementById('cg-msg-banner');
+  document.getElementById('cg-msg-text').textContent = m.message;
+  document.getElementById('cg-name-lbl').textContent = m.sender || caregiverName;
+  banner.classList.remove('hidden');
+
+  // Show in chat thread
+  addAIMsg(
+    `${caregiverName} का संदेश: "${m.message}"`,
+    `Message from ${m.sender || caregiverName}: "${m.message}"`
+  );
+
+  // Speak: first announce in Hindi who sent it, then read the message
+  const isHindi = /[\u0900-\u097F]/.test(m.message);
+  const announcement = isHindi
+    ? `${caregiverName} कह रहे हैं: ${m.message}`
+    : `${m.sender || caregiverName} says: ${m.message}`;
+  speak(announcement);
+
+  setTimeout(() => banner.classList.add('hidden'), 10000);
+}
+
+/* ===== AI STATUS ===== */
+function setAI(s) {
+  const dot = document.getElementById('ai-dot'), lbl = document.getElementById('ai-lbl');
+  const wave = document.getElementById('ai-wave');
+  if (s==='speaking')  { dot.style.background='#f59e0b'; lbl.textContent='Speaking…'; wave.classList.remove('hidden'); wave.classList.add('flex'); }
+  else if (s==='listening') { dot.style.background='#a78bfa'; lbl.textContent='Listening…'; }
+  else if (s==='offline')   { dot.style.background='#a83836'; lbl.textContent='Reconnecting…'; wave.classList.add('hidden'); }
+  else { dot.style.background='#22c55e'; lbl.textContent='Active & Ready'; wave.classList.add('hidden'); wave.classList.remove('flex'); }
+}
+
+/* ===== REMINDERS — with caregiver notification ===== */
+const REMINDERS = [
+  {
+    icon:'pill', label:'Morning Vitamins', hi:'सुबह की दवाई',
+    sub:'After breakfast • 8:30 AM',
+    bg:'bg-secondary-container', tc:'text-on-secondary-container',
+    caregiverMsg: `✅ ${patientName} has taken their morning vitamins.`,
+    done: false
+  },
+  {
+    icon:'water_drop', label:'Hydration Break', hi:'पानी पिएं',
+    sub:'Drink 250ml water',
+    bg:'bg-primary-container/40', tc:'text-on-primary-container',
+    caregiverMsg: `💧 ${patientName} has had their water / hydration break.`,
+    done: false
+  },
+  {
+    icon:'directions_walk', label:'Gentle Stroll', hi:'सुबह की सैर',
+    sub:'Garden area • 10:00 AM',
+    bg:'bg-tertiary-container/40', tc:'text-on-tertiary-container',
+    caregiverMsg: `🚶 ${patientName} has completed their gentle stroll / exercise.`,
+    done: false
+  },
+  {
+    icon:'video_call', label:`Call with ${caregiverName}`, hi:`${caregiverName} से बात`,
+    sub:'Family check-in • 6:00 PM',
+    bg:'bg-surface-container-highest', tc:'text-on-surface-variant',
+    caregiverMsg: `📞 ${patientName} has completed their family check-in call.`,
+    done: false
+  },
+];
+
+function renderReminders() {
+  const el = document.getElementById('reminders-grid');
+  el.innerHTML = REMINDERS.map((r,i) => `
+    <div class="reminder-card ${r.bg} rounded-xl p-5 flex items-center gap-4 hover:shadow-md transition-all ${r.done?'opacity-60':''}" onclick="toggleReminder(${i})">
+      <div class="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-sm flex-shrink-0">
+        <span class="material-symbols-outlined text-2xl ${r.tc}" style="font-variation-settings:'FILL' 1;">${r.icon}</span>
+      </div>
+      <div class="flex-1">
+        <h3 class="font-bold text-base ${r.tc} leading-tight">${r.label}</h3>
+        <p class="text-sm deva ${r.tc}/70">${r.hi}</p>
+        <p class="text-xs ${r.tc}/60 mt-0.5">${r.sub}</p>
+      </div>
+      <div class="w-10 h-10 border-2 ${r.done?'bg-green-500 border-green-500':'border-current/20'} rounded-full flex items-center justify-center transition-all duration-300">
+        <span class="material-symbols-outlined text-lg ${r.done?'text-white':r.tc}">${r.done?'check':'circle'}</span>
+      </div>
+    </div>`).join('');
+  const left = REMINDERS.filter(r=>!r.done).length;
+  document.getElementById('tasks-left').textContent = left + (left===1?' Task':' Tasks');
+}
+
+function toggleReminder(i) {
+  REMINDERS[i].done = !REMINDERS[i].done;
+  renderReminders();
+
+  if (REMINDERS[i].done) {
+    // 1. AI tells the patient — well done in Hindi
+    addAIMsg(REMINDERS[i].hi + ' — हो गया! ✓', REMINDERS[i].label + ' — Done! Great job.');
+    speak(REMINDERS[i].hi + ' — हो गया! बहुत अच्छे।');
+
+    // 2. Send alert/notification to caregiver dashboard via WebSocket
+    socket.emit('patient_message', {
+      message:     REMINDERS[i].caregiverMsg,
+      sender:      patientName,
+      timestamp:   new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+      fromPatient: true,
+      isReminder:  true,
+    });
+
+    // 3. Also fire a backend alert so it gets logged in the database
+    fetch('/test_alert', { method:'POST' });
+  }
+}
+
+/* ===== TTS — FIXED ===== */
+let _ttsReady = false;
+
+// Browsers block autoplay until user interacts. This flag tracks it.
+document.addEventListener('click', () => { _ttsReady = true; }, { once: false });
+document.addEventListener('keydown', () => { _ttsReady = true; }, { once: false });
+
+function speak(text, onDone) {
+  if (!text || !text.trim()) { if (onDone) onDone(); return; }
+  if (!('speechSynthesis' in window)) { if (onDone) onDone(); return; }
+
+  // Detect if text is Hindi (contains Devanagari characters)
+  const isHindi = /[\u0900-\u097F]/.test(text);
+  const lang    = isHindi ? 'hi-IN' : 'en-IN';  // en-IN sounds natural for Indian English
+
+  // Cancel any ongoing speech
+  window.speechSynthesis.cancel();
+
+  const doSpeak = () => {
+    const u    = new SpeechSynthesisUtterance(text);
+    u.lang     = lang;
+    u.rate     = isHindi ? 0.88 : 0.92;
+    u.pitch    = 1.05;
+    u.volume   = 1.0;
+
+    u.onstart = () => setAI('speaking');
+    u.onend   = () => { setAI('ready'); if (onDone) onDone(); };
+    u.onerror = (e) => {
+      console.warn('[TTS error]', e.error);
+      setAI('ready');
+      if (onDone) onDone();
+    };
+
+    // Pick best available voice for the language
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length) {
+      const preferred = voices.find(v => v.lang === lang)
+        || voices.find(v => v.lang.startsWith(isHindi ? 'hi' : 'en'))
+        || voices[0];
+      if (preferred) u.voice = preferred;
+    }
+
+    window.speechSynthesis.speak(u);
+
+    // Chrome bug: long utterances get cut off — keep synthesis alive
+    const keepAlive = setInterval(() => {
+      if (!window.speechSynthesis.speaking) { clearInterval(keepAlive); return; }
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    }, 10000);
+  };
+
+  // If voices not loaded yet, wait for them
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = () => { doSpeak(); };
+  } else {
+    doSpeak();
+  }
+}
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

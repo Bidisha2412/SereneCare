@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SereneCare | Caregiver Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          "primary":"#006978","primary-dim":"#005c69","primary-container":"#91eafd","on-primary-container":"#005763",
+          "secondary":"#605890","secondary-container":"#e5deff","on-secondary-container":"#534a81",
+          "tertiary":"#7b5745","tertiary-container":"#fdcdb6","on-tertiary-container":"#644332",
+          "background":"#fcf9f6","surface":"#fcf9f6",
+          "surface-container-low":"#f6f3f0","surface-container":"#f0eeea",
+          "surface-container-high":"#eae8e4","surface-container-highest":"#e4e2de","surface-container-lowest":"#ffffff",
+          "on-surface":"#323330","on-surface-variant":"#5f5f5c",
+          "outline-variant":"#b3b2ae","error":"#a83836","error-container":"#fa746f","on-error-container":"#6e0a12",
+        },
+        fontFamily:{"headline":["Lexend"],"body":["Lexend"]},
+        borderRadius:{"DEFAULT":"1rem","lg":"2rem","xl":"3rem","full":"9999px"},
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family:'Lexend',sans-serif; }
+  .material-symbols-outlined { font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; }
+  .glass { backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
+  .slide-in  { animation:slideIn .3s cubic-bezier(.22,1,.36,1); }
+  @keyframes slideIn { from{opacity:0;transform:translateX(16px)} to{opacity:1;transform:none} }
+  .fade-up   { animation:fadeUp .4s cubic-bezier(.22,1,.36,1); }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+  .toast-in  { animation:toastIn .35s cubic-bezier(.22,1,.36,1); }
+  @keyframes toastIn { from{opacity:0;transform:translateY(-10px) scale(.96)} to{opacity:1;transform:none} }
+  .pulse { animation:pulseAnim 2s cubic-bezier(.4,0,.6,1) infinite; }
+  @keyframes pulseAnim { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .critical-flash { animation:critFlash 1s ease 3; }
+  @keyframes critFlash { 0%,100%{background:transparent} 50%{background:rgba(168,56,54,.07)} }
+  .chart-bar { transition:height .5s cubic-bezier(.22,1,.36,1); }
+  ::-webkit-scrollbar{width:3px} ::-webkit-scrollbar-thumb{background:#b3b2ae;border-radius:9px}
+</style>
+</head>
+
+<body class="bg-background text-on-surface min-h-screen">
+
+<!-- ===== GUARD: redirect to login if no session ===== -->
+<script>
+  const _raw = localStorage.getItem('serenecare_user');
+  if (!_raw) window.location.href = '/';
+  const USER = JSON.parse(_raw || '{}');
+</script>
+
+<!-- ===== TOAST CONTAINER ===== -->
+<div id="toasts" class="fixed top-24 right-5 z-[300] flex flex-col gap-3 w-80 pointer-events-none"></div>
+
+<!-- ===== HEADER ===== -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-20 bg-white/75 glass shadow-sm">
+  <div class="flex items-center gap-3">
+    <div class="w-10 h-10 bg-primary rounded-full flex items-center justify-center shadow">
+      <span class="material-symbols-outlined text-white" style="font-variation-settings:'FILL' 1;">shield</span>
+    </div>
+    <div>
+      <h1 class="text-lg font-black text-primary leading-none tracking-tight">CareWatch</h1>
+      <p class="text-[11px] text-on-surface-variant font-medium uppercase tracking-widest">Caregiver Portal</p>
+    </div>
+  </div>
+  <nav class="hidden md:flex items-center gap-1">
+    <a class="text-primary font-bold bg-primary-container/40 px-4 py-2 rounded-full text-sm" href="/caregiver">Dashboard</a>
+    <a class="text-on-surface-variant hover:bg-surface-container-high px-4 py-2 rounded-full text-sm transition-colors" href="/patient">Patient View</a>
+  </nav>
+  <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2 bg-surface-container-low px-4 py-2 rounded-full border border-outline-variant/20">
+      <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center font-black text-secondary text-sm" id="hdr-avatar">?</div>
+      <div class="hidden md:block">
+        <p class="text-sm font-bold text-on-surface leading-none" id="hdr-caregiver-name">Loading…</p>
+        <p class="text-[11px] text-on-surface-variant">Caregiver</p>
+      </div>
+    </div>
+    <button onclick="logout()" class="p-2 text-on-surface-variant hover:bg-surface-container-high rounded-full transition-all active:scale-95" title="Logout">
+      <span class="material-symbols-outlined">logout</span>
+    </button>
+  </div>
+</header>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="fixed left-0 top-0 h-full w-72 z-40 hidden md:flex flex-col p-6 pt-24">
+  <div class="bg-white/80 glass rounded-r-[3rem] h-[calc(100vh-8rem)] shadow-[40px_0_40px_-10px_rgba(0,0,0,0.06)] flex flex-col p-6 space-y-1">
+    <div class="pb-5 mb-3 border-b border-outline-variant/10">
+      <h2 class="text-base font-black text-primary">Care Portal</h2>
+      <p class="text-xs text-on-surface-variant font-medium mt-0.5">Monitoring <span id="sb-patient-name" class="font-bold text-on-surface">—</span></p>
+      <div class="flex items-center gap-2 mt-3 bg-surface-container-low rounded-xl p-3">
+        <div>
+          <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Patient</p>
+          <p class="text-sm font-bold text-on-surface" id="sb-patient-detail">—</p>
+        </div>
+        <div class="ml-auto text-right">
+          <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Age</p>
+          <p class="text-sm font-bold text-on-surface" id="sb-patient-age">—</p>
+        </div>
+      </div>
+    </div>
+
+    <button onclick="navTo('section-camera')" id="nav-dashboard" class="flex items-center gap-3 w-full bg-primary-container/40 text-primary rounded-full px-5 py-3 text-sm font-semibold hover:translate-x-1 transition-transform text-left">
+      <span class="material-symbols-outlined text-lg" style="font-variation-settings:'FILL' 1;">grid_view</span>Dashboard
+    </button>
+    <button onclick="navTo('section-alerts')" id="nav-alerts" class="flex items-center gap-3 w-full text-on-surface-variant px-5 py-3 text-sm font-medium rounded-full hover:bg-surface-container-low hover:translate-x-1 transition-all text-left">
+      <span class="material-symbols-outlined text-lg">notifications_active</span>Alerts
+      <span class="ml-auto bg-error text-white text-[10px] font-black px-2 py-0.5 rounded-full" id="sb-alert-count">0</span>
+    </button>
+    <button onclick="navTo('section-messages')" id="nav-messages" class="flex items-center gap-3 w-full text-on-surface-variant px-5 py-3 text-sm font-medium rounded-full hover:bg-surface-container-low hover:translate-x-1 transition-all text-left">
+      <span class="material-symbols-outlined text-lg">forum</span>Messages
+    </button>
+    <button onclick="navTo('section-analytics')" id="nav-analytics" class="flex items-center gap-3 w-full text-on-surface-variant px-5 py-3 text-sm font-medium rounded-full hover:bg-surface-container-low hover:translate-x-1 transition-all text-left">
+      <span class="material-symbols-outlined text-lg">analytics</span>Analytics
+    </button>
+
+    <div class="mt-auto pt-4 border-t border-outline-variant/10 space-y-2">
+      <div class="bg-surface-container-low rounded-2xl p-4">
+        <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">System Status</p>
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full" id="sb-sys-dot" style="background:#b3b2ae"></span>
+          <span class="text-xs font-bold" id="sb-sys-txt">Connecting…</span>
+        </div>
+      </div>
+      <div class="bg-surface-container-low rounded-2xl p-4">
+        <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest mb-1">Last Activity</p>
+        <p class="text-sm font-bold text-on-surface" id="sb-last-activity">—</p>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<main class="pt-24 pb-28 md:pl-80 px-4 md:px-6 min-h-screen">
+
+  <!-- Greeting -->
+  <section class="mb-7 fade-up">
+    <h1 class="text-3xl md:text-4xl font-black text-on-surface tracking-tight leading-tight">
+      Good morning, <span id="greeting-caregiver">Caregiver</span>.
+    </h1>
+    <p class="text-base text-on-surface-variant font-medium mt-1">
+      Monitoring <span class="font-bold text-primary" id="greeting-patient">Patient</span> •
+      <span id="greeting-status" class="text-primary font-bold">All systems active</span>
+    </p>
+  </section>
+
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- ===== LEFT 8 COLS ===== -->
+    <div class="lg:col-span-8 space-y-6">
+
+      <!-- LIVE CAMERA FEED -->
+      <div id="section-camera" class="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/10">
+        <div class="px-5 py-4 bg-surface-container-low flex items-center justify-between border-b border-outline-variant/10">
+          <h2 class="text-sm font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1;">videocam</span>
+            Live Camera Feed — <span id="cam-patient-label" class="text-primary">Patient Room</span>
+          </h2>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 bg-error rounded-full pulse"></span>
+            <span class="text-[11px] font-black text-error uppercase tracking-widest">LIVE</span>
+          </div>
+        </div>
+        <div class="relative bg-black">
+          <img src="/video" alt="Live feed" class="w-full" style="aspect-ratio:16/9;object-fit:cover"/>
+          <!-- Corner brackets -->
+          <div class="absolute inset-0 pointer-events-none">
+            <div class="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-primary-container/80"></div>
+            <div class="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-primary-container/80"></div>
+            <div class="absolute bottom-12 left-3 w-6 h-6 border-b-2 border-l-2 border-primary-container/80"></div>
+            <div class="absolute bottom-12 right-3 w-6 h-6 border-b-2 border-r-2 border-primary-container/80"></div>
+            <!-- Fall overlay -->
+            <div id="fall-overlay" class="absolute inset-0 bg-error/25 hidden flex items-center justify-center">
+              <div class="bg-error text-white font-black text-xl px-8 py-4 rounded-2xl shadow-2xl">⚠ FALL DETECTED</div>
+            </div>
+          </div>
+          <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 bg-green-400 rounded-full pulse"></span>
+              <span class="text-white text-xs font-bold" id="cam-status-lbl">● Monitoring Active</span>
+            </div>
+            <span class="text-white/60 text-xs" id="cam-clock"></span>
+          </div>
+        </div>
+        <!-- Quick stats bar under video -->
+        <div class="grid grid-cols-3 divide-x divide-outline-variant/10">
+          <div class="px-5 py-3 text-center">
+            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Motion</p>
+            <p class="text-sm font-black mt-0.5" id="vbar-motion" style="color:#006978">—</p>
+          </div>
+          <div class="px-5 py-3 text-center">
+            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Inactive</p>
+            <p class="text-sm font-black mt-0.5" id="vbar-inactive" style="color:#006978">0s</p>
+          </div>
+          <div class="px-5 py-3 text-center">
+            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Camera</p>
+            <p class="text-sm font-black mt-0.5" id="vbar-camera" style="color:#006978">—</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAT CARDS -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white rounded-xl p-5 shadow-sm border border-outline-variant/10">
+          <span class="material-symbols-outlined text-primary text-xl block mb-2" style="font-variation-settings:'FILL' 1;">person</span>
+          <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Patient</p>
+          <p class="text-base font-black text-on-surface mt-0.5 truncate" id="stat-patient">—</p>
+        </div>
+        <div class="bg-white rounded-xl p-5 shadow-sm border border-outline-variant/10">
+          <span class="material-symbols-outlined text-secondary text-xl block mb-2" style="font-variation-settings:'FILL' 1;">cake</span>
+          <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Age</p>
+          <p class="text-base font-black text-on-surface mt-0.5" id="stat-age">—</p>
+        </div>
+        <div class="bg-white rounded-xl p-5 shadow-sm border border-outline-variant/10">
+          <span class="material-symbols-outlined text-tertiary text-xl block mb-2" style="font-variation-settings:'FILL' 1;">timer</span>
+          <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">Inactive</p>
+          <p class="text-base font-black text-on-surface mt-0.5" id="stat-inactive">0s</p>
+        </div>
+        <div class="bg-error/5 border border-error/10 rounded-xl p-5 shadow-sm">
+          <span class="material-symbols-outlined text-error text-xl block mb-2" style="font-variation-settings:'FILL' 1;">warning</span>
+          <p class="text-[10px] font-bold text-error/60 uppercase tracking-wider">Alerts</p>
+          <p class="text-base font-black text-error mt-0.5" id="stat-alerts">0</p>
+        </div>
+      </div>
+
+      <!-- LIVE ALERT FEED -->
+      <div id="section-alerts" class="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/10">
+        <div class="px-5 py-4 bg-surface-container-low flex items-center justify-between border-b border-outline-variant/10">
+          <h2 class="text-sm font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-error" style="font-variation-settings:'FILL' 1;">notifications_active</span>
+            Live Alert Feed
+          </h2>
+          <div class="flex gap-2">
+            <button onclick="fetch('/clear',{method:'POST'})" class="text-xs font-bold text-on-surface-variant bg-surface-container px-3 py-1.5 rounded-full hover:bg-surface-container-high transition-colors active:scale-95">Clear</button>
+            <button onclick="fetch('/test_alert',{method:'POST'})" class="text-xs font-bold text-primary bg-primary-container/40 px-3 py-1.5 rounded-full hover:bg-primary-container/60 transition-colors active:scale-95">Test Alert</button>
+          </div>
+        </div>
+        <div class="max-h-72 overflow-y-auto divide-y divide-outline-variant/10" id="alert-feed">
+          <div class="p-8 text-center text-on-surface-variant">
+            <span class="material-symbols-outlined text-3xl opacity-20 block mb-1">notifications</span>
+            <p class="text-sm font-medium">No alerts — system monitoring actively</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIVITY ANALYTICS -->
+      <div id="section-analytics" class="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/10">
+        <div class="px-5 py-4 bg-surface-container-low border-b border-outline-variant/10">
+          <h2 class="text-sm font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1;">analytics</span>
+            Activity Analytics
+          </h2>
+        </div>
+        <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-3">Motion Activity</p>
+            <div class="flex items-end gap-1 h-20" id="motion-chart"></div>
+            <div class="flex justify-between mt-1"><span class="text-[10px] text-on-surface-variant">Older</span><span class="text-[10px] text-on-surface-variant">Now</span></div>
+          </div>
+          <div>
+            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-3">Inactivity Duration</p>
+            <div class="flex items-end gap-1 h-20" id="inactivity-chart"></div>
+            <div class="flex justify-between mt-1"><span class="text-[10px] text-on-surface-variant">Older</span><span class="text-[10px] text-on-surface-variant">Now</span></div>
+          </div>
+          <div>
+            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-3">Fall Incidents</p>
+            <div class="space-y-3">
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-on-surface-variant">Today</span>
+                <span class="text-2xl font-black text-on-surface" id="fall-today">0</span>
+              </div>
+              <div class="w-full bg-surface-container-highest h-2 rounded-full overflow-hidden">
+                <div class="bg-error h-full rounded-full transition-all duration-700" id="fall-bar" style="width:0%"></div>
+              </div>
+              <div class="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
+                <span class="material-symbols-outlined text-green-600 text-base" style="font-variation-settings:'FILL' 1;" id="fall-ico">check_circle</span>
+                <span class="text-xs font-bold text-green-700" id="fall-msg">No falls detected</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== RIGHT 4 COLS ===== -->
+    <div class="lg:col-span-4 space-y-6">
+
+      <!-- ═══ ML HEALTH RISK PREDICTION PANEL ═══ -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/10" id="risk-panel">
+        <div class="px-5 py-4 bg-surface-container-low border-b border-outline-variant/10 flex items-center justify-between">
+          <h2 class="text-sm font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary" style="font-variation-settings:'FILL' 1;">biotech</span>
+            AI Health Risk Prediction
+          </h2>
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 bg-green-500 rounded-full pulse" id="ml-dot"></span>
+            <span class="text-[10px] font-bold text-green-600 uppercase tracking-widest" id="ml-lbl">ML Active</span>
+          </div>
+        </div>
+
+        <!-- Main risk indicator -->
+        <div class="p-5">
+          <div class="flex items-center gap-4 mb-4">
+            <!-- Risk icon circle -->
+            <div class="w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500" id="risk-icon-wrap" style="background:#dcfce7;border:3px solid #bbf7d0">
+              <span class="material-symbols-outlined text-3xl" style="font-variation-settings:'FILL' 1;" id="risk-icon">favorite</span>
+            </div>
+            <div class="flex-1">
+              <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-0.5">Current Status</p>
+              <p class="text-xl font-black text-on-surface leading-tight" id="risk-class-name">Normal</p>
+              <p class="text-xs text-on-surface-variant mt-0.5">Confidence: <span class="font-bold text-primary" id="risk-confidence">—</span></p>
+            </div>
+            <div class="text-right flex-shrink-0">
+              <div class="px-3 py-1.5 rounded-full text-xs font-black uppercase tracking-wider" id="risk-severity-badge" style="background:#dcfce7;color:#15803d">None</div>
+              <p class="text-[10px] text-on-surface-variant mt-1" id="risk-timestamp">—</p>
+            </div>
+          </div>
+
+          <!-- Probability bars -->
+          <div class="space-y-2 mb-4" id="risk-prob-bars">
+            <!-- filled by JS -->
+          </div>
+
+          <!-- False alarm notice -->
+          <div id="risk-false-alarm-notice" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2 mb-3">
+            <span class="material-symbols-outlined text-blue-600 text-base" style="font-variation-settings:'FILL' 1;">info</span>
+            <p class="text-xs font-semibold text-blue-700">Low confidence — reclassified as False Alarm by filter</p>
+          </div>
+
+          <!-- Demo simulate buttons -->
+          <div>
+            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Simulate Scenario (Demo)</p>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="simulateRisk('normal')"
+                class="text-xs font-semibold bg-green-50 text-green-700 border border-green-200 px-3 py-2 rounded-xl hover:bg-green-100 transition-all active:scale-95">
+                ✓ Normal
+              </button>
+              <button onclick="simulateRisk('heart_attack')"
+                class="text-xs font-semibold bg-error/10 text-error border border-error/20 px-3 py-2 rounded-xl hover:bg-error/20 transition-all active:scale-95">
+                ❤ Heart Risk
+              </button>
+              <button onclick="simulateRisk('panic')"
+                class="text-xs font-semibold bg-orange-50 text-orange-700 border border-orange-200 px-3 py-2 rounded-xl hover:bg-orange-100 transition-all active:scale-95">
+                ⚡ Panic Attack
+              </button>
+              <button onclick="simulateRisk('false_alarm')"
+                class="text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-3 py-2 rounded-xl hover:bg-blue-100 transition-all active:scale-95">
+                ✗ False Alarm
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EMERGENCY TRIGGERS -->
+      <div class="bg-error/5 border-2 border-error/10 rounded-xl overflow-hidden">
+        <div class="px-5 py-4 border-b border-error/10 bg-error/5 flex items-center gap-2">
+          <span class="material-symbols-outlined text-error" style="font-variation-settings:'FILL' 1;">emergency</span>
+          <h2 class="text-sm font-bold text-on-error-container">Emergency Triggers</h2>
+          <span class="ml-auto w-2 h-2 bg-error rounded-full pulse" id="emg-dot" style="display:none"></span>
+        </div>
+        <div class="max-h-52 overflow-y-auto" id="emergency-list">
+          <div class="p-6 text-center">
+            <span class="material-symbols-outlined text-3xl text-error/20 block mb-1">shield</span>
+            <p class="text-xs font-medium text-on-surface-variant">No triggers received</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- MESSAGE PANEL -->
+      <div id="section-messages" class="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/10">
+        <div class="px-5 py-4 bg-surface-container-low border-b border-outline-variant/10">
+          <h2 class="text-sm font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary" style="font-variation-settings:'FILL' 1;">forum</span>
+            Send Message to <span id="msg-patient-label" class="text-primary ml-1">Patient</span>
+          </h2>
+        </div>
+        <!-- Chat -->
+        <div class="max-h-44 overflow-y-auto p-4 space-y-3" id="msg-thread">
+          <div class="msg-placeholder text-center text-xs text-on-surface-variant py-3">Messages will appear here</div>
+        </div>
+        <!-- Quick messages -->
+        <div class="px-4 pb-3">
+          <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Quick Messages</p>
+          <div class="flex flex-wrap gap-1.5">
+            <button onclick="sendMsg('Are you okay? 💙')" class="text-xs font-semibold bg-primary-container/30 text-on-primary-container px-3 py-1.5 rounded-full hover:bg-primary-container/50 transition-all active:scale-95">Are you okay?</button>
+            <button onclick="sendMsg('💊 Time to take your medicine!')" class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1.5 rounded-full hover:bg-secondary-container/70 transition-all active:scale-95">Take medicine</button>
+            <button onclick="sendMsg('📞 Please call me!')" class="text-xs font-semibold bg-tertiary-container/50 text-on-tertiary-container px-3 py-1.5 rounded-full hover:bg-tertiary-container transition-all active:scale-95">Call me</button>
+            <button onclick="sendMsg('💧 Please drink some water!')" class="text-xs font-semibold bg-surface-container text-on-surface-variant px-3 py-1.5 rounded-full hover:bg-surface-container-high transition-all active:scale-95">Drink water</button>
+          </div>
+        </div>
+        <!-- Input -->
+        <div class="p-3 bg-surface-container-low/60 border-t border-outline-variant/10">
+          <div class="flex gap-2">
+            <input id="msg-input" type="text" placeholder="Type a message…"
+              class="flex-1 bg-surface-container-lowest border-none py-3 px-4 rounded-full text-sm shadow-inner focus:ring-2 focus:ring-primary/20 outline-none"
+              onkeydown="if(event.key==='Enter')sendMsg(document.getElementById('msg-input').value)"/>
+            <button onclick="sendMsg(document.getElementById('msg-input').value)"
+              class="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center shadow active:scale-90 transition-all flex-shrink-0">
+              <span class="material-symbols-outlined text-base">send</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALERT HISTORY -->
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden border border-outline-variant/10">
+        <div class="px-5 py-4 bg-surface-container-low border-b border-outline-variant/10">
+          <h2 class="text-sm font-bold text-on-surface flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary text-lg">history</span>Alert History
+          </h2>
+        </div>
+        <div class="max-h-56 overflow-y-auto" id="alert-history">
+          <div class="p-5 text-center text-sm text-on-surface-variant">No history yet</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- Mobile bottom nav -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-5 pt-3 md:hidden bg-white/80 glass rounded-t-[2.5rem] shadow-[0_-10px_40px_-10px_rgba(0,0,0,0.1)]">
+  <a class="flex flex-col items-center bg-cyan-600 text-white rounded-[2rem] px-5 py-2" href="/caregiver"><span class="material-symbols-outlined">home</span><span class="text-[10px] mt-0.5">Home</span></a>
+  <a class="flex flex-col items-center text-slate-500 px-4 py-2" href="#"><span class="material-symbols-outlined">notifications_active</span><span class="text-[10px] mt-0.5">Alerts</span></a>
+  <a class="flex flex-col items-center text-slate-500 px-4 py-2" href="#"><span class="material-symbols-outlined">forum</span><span class="text-[10px] mt-0.5">Messages</span></a>
+  <a class="flex flex-col items-center text-slate-500 px-4 py-2" href="/patient"><span class="material-symbols-outlined">elderly</span><span class="text-[10px] mt-0.5">Patient</span></a>
+</nav>
+
+<script>
+/* ===== USER DATA FROM LOGIN ===== */
+const U = JSON.parse(localStorage.getItem('serenecare_user') || '{}');
+function initUserData() {
+  const cn = U.caregiverName || 'Caregiver';
+  const pn = U.patientName   || 'Patient';
+  const pa = U.patientAge    || '—';
+  document.getElementById('hdr-caregiver-name').textContent = cn;
+  document.getElementById('hdr-avatar').textContent = cn.charAt(0).toUpperCase();
+  document.getElementById('sb-patient-name').textContent = pn;
+  document.getElementById('sb-patient-detail').textContent = pn;
+  document.getElementById('sb-patient-age').textContent = pa + ' yrs';
+  document.getElementById('greeting-caregiver').textContent = cn;
+  document.getElementById('greeting-patient').textContent = pn;
+  document.getElementById('cam-patient-label').textContent = pn + "'s Room";
+  document.getElementById('msg-patient-label').textContent = pn;
+  document.getElementById('stat-patient').textContent = pn;
+  document.getElementById('stat-age').textContent = pa + ' yrs';
+
+  // Register patient name with backend so WhatsApp alerts include the right name
+  fetch('/set_patient', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patientName: pn, caregiverName: cn })
+  });
+}
+initUserData();
+
+/* ===== SOCKET ===== */
+const socket = io();
+let allAlerts = [], fallCount = 0;
+let motionData = new Array(20).fill(0), inactData = new Array(20).fill(0);
+
+socket.on('connect',        () => setSysOnline(true));
+socket.on('disconnect',     () => setSysOnline(false));
+socket.on('alert_history',  a  => { allAlerts=[...a].reverse(); renderFeed(); renderHistory(); });
+socket.on('new_alert',      a  => { allAlerts.unshift(a); renderFeed(); renderHistory(); handleNewAlert(a); });
+socket.on('alerts_cleared', () => { allAlerts=[]; renderFeed(); renderHistory(); });
+socket.on('status_update',  s  => updateStatus(s));
+socket.on('caregiver_message', m => addMsgBubble(m, false));
+
+function setSysOnline(on) {
+  document.getElementById('sb-sys-dot').style.background = on ? '#22c55e' : '#a83836';
+  document.getElementById('sb-sys-txt').textContent = on ? 'System Online' : 'Disconnected';
+  document.getElementById('sb-sys-txt').style.color = on ? '#15803d' : '#a83836';
+}
+
+/* ===== STATUS ===== */
+function updateStatus(s) {
+  const dur = Math.floor(s.inactive_duration || 0);
+
+  document.getElementById('vbar-motion').textContent  = s.motion ? '● Active' : '◯ Still';
+  document.getElementById('vbar-motion').style.color  = s.motion ? '#15803d' : '#5f5f5c';
+  document.getElementById('vbar-inactive').textContent = dur + 's';
+  document.getElementById('vbar-inactive').style.color = dur > 55 ? '#b45309' : '#006978';
+  document.getElementById('vbar-camera').textContent   = s.camera_ok ? 'Active ✓' : 'No Camera';
+  document.getElementById('vbar-camera').style.color   = s.camera_ok ? '#006978' : '#a83836';
+
+  document.getElementById('stat-inactive').textContent = dur + 's';
+  document.getElementById('stat-inactive').style.color = dur > 55 ? '#b45309' : '#006978';
+
+  document.getElementById('sb-last-activity').textContent = s.motion ? 'Just now' : `${dur}s ago`;
+  document.getElementById('greeting-status').textContent  = s.fall ? '⚠ Fall detected!' : s.motion ? 'Active & moving' : 'All systems active';
+
+  const camLbl = document.getElementById('cam-status-lbl');
+  camLbl.textContent = s.fall ? '⚠ FALL DETECTED' : s.motion ? '● Moving' : `● Still — ${dur}s`;
+
+  document.getElementById('fall-overlay').className = s.fall
+    ? 'absolute inset-0 bg-error/25 flex items-center justify-center'
+    : 'absolute inset-0 bg-error/25 hidden flex items-center justify-center';
+
+  motionData.push(s.motion ? Math.floor(Math.random()*50)+50 : Math.floor(Math.random()*10));
+  motionData = motionData.slice(-20);
+  inactData.push(Math.min(dur, 100));
+  inactData = inactData.slice(-20);
+  renderCharts();
+}
+
+/* ===== CLOCK ===== */
+setInterval(() => { document.getElementById('cam-clock').textContent = new Date().toLocaleTimeString(); }, 1000);
+
+/* ===== ALERTS ===== */
+const AICONS  = { fall:'emergency', inactivity:'timer', voice:'record_voice_over', sos:'sos', reminder:'alarm', test:'science', general:'info' };
+const ACOLORS = { fall:'text-error', inactivity:'text-amber-600', voice:'text-secondary', sos:'text-error', test:'text-primary', general:'text-on-surface-variant' };
+const ABGS    = { fall:'bg-error/10 border-error/30', inactivity:'bg-amber-50 border-amber-200', voice:'bg-secondary-container/30 border-secondary/20', sos:'bg-error/10 border-error/30', test:'bg-primary-container/20 border-primary/20', general:'bg-surface-container border-outline-variant/20' };
+
+function renderFeed() {
+  const el = document.getElementById('alert-feed');
+  if (!allAlerts.length) {
+    el.innerHTML = '<div class="p-8 text-center text-on-surface-variant"><span class="material-symbols-outlined text-3xl opacity-20 block mb-1">notifications</span><p class="text-sm font-medium">No alerts — monitoring active</p></div>';
+    return;
+  }
+  el.innerHTML = allAlerts.slice(0,25).map(a => {
+    const isCritical = a.type==='fall' || a.type==='sos';
+    return `<div class="flex items-start gap-3 px-4 py-3 ${isCritical?'border-l-4 border-l-error bg-error/5':''} slide-in">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 border ${ABGS[a.type]||ABGS.general}">
+        <span class="material-symbols-outlined text-base ${ACOLORS[a.type]||''}" style="font-variation-settings:'FILL' 1;">${AICONS[a.type]||'info'}</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-0.5">
+          <span class="text-[10px] font-black uppercase tracking-wider ${isCritical?'text-error':'text-on-surface-variant'}">${a.type}</span>
+          ${isCritical?'<span class="text-[9px] font-black bg-error text-white px-2 py-0.5 rounded-full">CRITICAL</span>':''}
+        </div>
+        <p class="text-sm font-medium text-on-surface leading-snug">${esc(a.message)}</p>
+        <p class="text-[11px] text-on-surface-variant mt-0.5">${a.timestamp}</p>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('stat-alerts').textContent = allAlerts.length;
+  document.getElementById('sb-alert-count').textContent = allAlerts.length;
+}
+
+function renderHistory() {
+  const el = document.getElementById('alert-history');
+  if (!allAlerts.length) { el.innerHTML='<div class="p-5 text-center text-sm text-on-surface-variant">No history yet</div>'; return; }
+  el.innerHTML = allAlerts.slice(0,20).map(a=>`
+    <div class="flex items-center gap-3 px-4 py-2.5 border-b border-outline-variant/10 hover:bg-surface-container-low transition-colors">
+      <span class="material-symbols-outlined text-base ${ACOLORS[a.type]||'text-on-surface-variant'}" style="font-variation-settings:'FILL' 1;">${AICONS[a.type]||'info'}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-semibold text-on-surface truncate">${esc(a.message)}</p>
+        <p class="text-[10px] text-on-surface-variant">${a.timestamp}</p>
+      </div>
+      <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${ABGS[a.type]||''}">${a.type}</span>
+    </div>`).join('');
+}
+
+function handleNewAlert(a) {
+  document.getElementById('notif-dot').classList.remove('hidden');
+  if (a.type==='fall' || a.type==='sos') {
+    fallCount++;
+    addEmergency(a);
+    showToast(a.message, 'critical');
+    document.getElementById('fall-today').textContent = fallCount;
+    document.getElementById('fall-bar').style.width = Math.min(fallCount*25,100)+'%';
+    document.getElementById('fall-msg').textContent = `${fallCount} fall(s) detected today`;
+    document.getElementById('fall-ico').textContent = 'warning';
+    document.getElementById('fall-ico').style.color = '#a83836';
+    document.getElementById('fall-msg').style.color = '#a83836';
+    document.getElementById('fall-ico').closest('div').className = 'bg-error/10 border border-error/20 rounded-xl p-3 flex items-center gap-2';
+  } else if (a.type==='inactivity') {
+    addEmergency(a);
+    showToast(a.message, 'warning');
+  } else {
+    showToast(a.message, 'info');
+  }
+}
+
+function addEmergency(a) {
+  const el = document.getElementById('emergency-list');
+  const empty = el.querySelector('.emg-empty');
+  if (empty) el.innerHTML='';
+  document.getElementById('emg-dot').style.display = 'block';
+  const sev = (a.type==='fall'||a.type==='sos') ? 'CRITICAL' : 'WARNING';
+  const sevBg = sev==='CRITICAL' ? 'bg-error text-white' : 'bg-amber-500 text-white';
+  const d = document.createElement('div');
+  d.className = 'flex items-start gap-3 p-4 border-b border-error/10 slide-in';
+  d.innerHTML = `
+    <span class="material-symbols-outlined text-error text-2xl flex-shrink-0 mt-0.5" style="font-variation-settings:'FILL' 1;">${AICONS[a.type]||'warning'}</span>
+    <div class="flex-1">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="text-[9px] font-black ${sevBg} px-2 py-0.5 rounded-full">${sev}</span>
+        <span class="text-[10px] text-on-surface-variant">${a.timestamp}</span>
+      </div>
+      <p class="text-sm font-semibold text-on-surface">${esc(a.message)}</p>
+    </div>`;
+  el.prepend(d);
+  if (el.children.length > 6) el.removeChild(el.lastChild);
+}
+
+/* ===== MESSAGING — FIXED (no duplication) ===== */
+function sendMsg(msg) {
+  const inp = document.getElementById('msg-input');
+  const text = (typeof msg === 'string' ? msg : inp.value).trim();
+  if (!text) return;
+
+  const payload = {
+    message:   text,
+    sender:    U.caregiverName || 'Caregiver',
+    timestamp: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
+  };
+
+  // Emit to server — server will broadcast to ALL clients including patient
+  socket.emit('caregiver_message', payload);
+
+  // Add bubble ONLY on caregiver side locally (do NOT wait for server echo)
+  addMsgBubble(payload, true);
+  inp.value = '';
+}
+
+// Receive incoming messages FROM PATIENT — show on right side of caregiver thread
+socket.on('patient_message', m => {
+  addMsgBubble(m, false);
+  // Flash the message section so caregiver notices
+  const section = document.getElementById('section-messages');
+  if (section) {
+    section.style.transition = 'box-shadow .3s';
+    section.style.boxShadow  = '0 0 0 3px rgba(96,88,144,.35)';
+    setTimeout(() => { section.style.boxShadow = ''; }, 2000);
+  }
+  showToast(`${m.sender}: "${m.message}"`, 'info');
+});
+
+function addMsgBubble(m, isMe) {
+  const el = document.getElementById('msg-thread');
+  const placeholder = el.querySelector('.msg-placeholder');
+  if (placeholder) placeholder.remove();
+
+  const d = document.createElement('div');
+
+  // Reminder notifications get a special green style
+  if (!isMe && m.isReminder) {
+    d.className = 'slide-in';
+    d.innerHTML = `<div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 flex items-start gap-3">
+      <span class="material-symbols-outlined text-green-600 text-xl flex-shrink-0 mt-0.5" style="font-variation-settings:'FILL' 1;">task_alt</span>
+      <div class="flex-1">
+        <p class="text-xs font-black text-green-700 uppercase tracking-wider mb-0.5">Task Completed</p>
+        <p class="text-sm font-semibold text-green-900">${esc(m.message)}</p>
+        <p class="text-[10px] text-green-600 mt-0.5">${esc(m.sender)} • ${m.timestamp}</p>
+      </div>
+    </div>`;
+  } else {
+    d.className = `flex ${isMe ? 'justify-end' : 'justify-start'} slide-in`;
+    d.innerHTML = `<div class="${isMe
+      ? 'bg-secondary-container/50 rounded-l-xl rounded-br-xl'
+      : 'bg-primary-container/20 rounded-r-xl rounded-bl-xl'} px-4 py-2.5 max-w-[85%]">
+      <p class="text-sm font-medium ${isMe ? 'text-on-secondary-container' : 'text-on-primary-container'}">${esc(m.message)}</p>
+      <p class="text-[10px] text-on-surface-variant mt-0.5">${esc(m.sender)} • ${m.timestamp}</p>
+    </div>`;
+  }
+
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ===== SIDEBAR NAVIGATION ===== */
+function navTo(sectionId) {
+  // Smooth scroll to section
+  const el = document.getElementById(sectionId);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Add a brief highlight flash
+    el.style.transition = 'box-shadow .3s';
+    el.style.boxShadow  = '0 0 0 3px rgba(0,105,120,.25)';
+    setTimeout(() => { el.style.boxShadow = ''; }, 1200);
+  }
+
+  // Update active nav button highlight
+  const navMap = {
+    'section-camera':    'nav-dashboard',
+    'section-alerts':    'nav-alerts',
+    'section-messages':  'nav-messages',
+    'section-analytics': 'nav-analytics',
+  };
+  ['nav-dashboard','nav-alerts','nav-messages','nav-analytics'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    if (id === navMap[sectionId]) {
+      btn.classList.add('bg-primary-container/40','text-primary');
+      btn.classList.remove('text-on-surface-variant');
+    } else {
+      btn.classList.remove('bg-primary-container/40','text-primary');
+      btn.classList.add('text-on-surface-variant');
+    }
+  });
+}
+
+/* ===== CHARTS ===== */
+function renderCharts() {
+  drawBars('motion-chart',    motionData, '#91eafd', '#006978');
+  drawBars('inactivity-chart', inactData, '#fde68a', '#b45309');
+}
+function drawBars(id, data, light, dark) {
+  const el = document.getElementById(id); if (!el) return;
+  const max = Math.max(...data, 1);
+  el.innerHTML = data.map((v,i) => `<div class="flex-1 rounded-t-sm chart-bar" style="height:${Math.max(Math.round(v/max*100),4)}%;background:${i===data.length-1?dark:light};min-height:3px" title="${v}"></div>`).join('');
+}
+
+/* ===== TOAST ===== */
+function showToast(msg, type) {
+  const cfg = { critical:{bg:'bg-error/10 border-error/30',icon:'emergency',color:'text-error',lbl:'CRITICAL'}, warning:{bg:'bg-amber-50 border-amber-200',icon:'warning',color:'text-amber-600',lbl:'WARNING'}, info:{bg:'bg-primary-container/20 border-primary/20',icon:'info',color:'text-primary',lbl:'INFO'} };
+  const c = cfg[type]||cfg.info;
+  const el = document.createElement('div');
+  el.className = `pointer-events-auto flex items-start gap-3 p-4 rounded-2xl border shadow-lg ${c.bg} toast-in`;
+  el.innerHTML = `<span class="material-symbols-outlined ${c.color} text-xl flex-shrink-0" style="font-variation-settings:'FILL' 1;">${c.icon}</span><div class="flex-1"><p class="text-[10px] font-black uppercase tracking-widest ${c.color} mb-0.5">${c.lbl}</p><p class="text-sm font-medium text-on-surface leading-snug">${esc(msg)}</p></div><button onclick="this.parentElement.remove()" class="text-on-surface-variant ml-1"><span class="material-symbols-outlined text-base">close</span></button>`;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(()=>el.remove(), 6000);
+}
+
+/* ===== UTILS ===== */
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function logout() { if(confirm('Log out?')) { localStorage.removeItem('serenecare_user'); window.location.href='/'; } }
+
+/* Init charts */
+motionData = [30,50,20,60,45,70,55,80,40,60,75,50,65,45,70,55,80,60,50,0];
+inactData  = [5,10,8,15,6,20,10,12,8,25,10,15,8,20,12,10,15,8,20,0];
+renderCharts();
+
+/* ===== HEALTH RISK ML PANEL ===== */
+socket.on('risk_update', r => renderRiskPanel(r));
+
+const RISK_CONFIG = {
+  0: { icon:'favorite',       bg:'#dcfce7', border:'#bbf7d0', iconColor:'#15803d', badgeBg:'#dcfce7', badgeColor:'#15803d', label:'None'     },
+  1: { icon:'emergency',      bg:'#fee2e2', border:'#fca5a5', iconColor:'#a83836', badgeBg:'#fee2e2', badgeColor:'#a83836', label:'CRITICAL'  },
+  2: { icon:'psychology',     bg:'#fff7ed', border:'#fed7aa', iconColor:'#c2410c', badgeBg:'#fff7ed', badgeColor:'#c2410c', label:'HIGH'      },
+  3: { icon:'info',           bg:'#eff6ff', border:'#bfdbfe', iconColor:'#1d4ed8', badgeBg:'#eff6ff', badgeColor:'#1d4ed8', label:'Low'       },
+};
+const PROB_COLORS = ['#22c55e','#ef4444','#f97316','#3b82f6'];
+const CLASS_LABELS = ['Normal','Heart Attack Risk','Panic Attack','False Alarm'];
+
+function renderRiskPanel(r) {
+  const label    = r.label || 0;
+  const cfg      = RISK_CONFIG[label] || RISK_CONFIG[0];
+  const probs    = r.probs || {};
+
+  // Icon wrap
+  const wrap = document.getElementById('risk-icon-wrap');
+  wrap.style.background   = cfg.bg;
+  wrap.style.borderColor  = cfg.border;
+  const ico = document.getElementById('risk-icon');
+  ico.textContent  = cfg.icon;
+  ico.style.color  = cfg.iconColor;
+
+  // Text
+  document.getElementById('risk-class-name').textContent  = r.class_name || 'Normal';
+  document.getElementById('risk-confidence').textContent  = (r.confidence || 0) + '%';
+  document.getElementById('risk-timestamp').textContent   = r.timestamp  || '';
+
+  // Severity badge
+  const badge = document.getElementById('risk-severity-badge');
+  badge.textContent        = cfg.label;
+  badge.style.background   = cfg.badgeBg;
+  badge.style.color        = cfg.badgeColor;
+
+  // False alarm notice
+  const faNotice = document.getElementById('risk-false-alarm-notice');
+  faNotice.classList.toggle('hidden', !r.overridden);
+
+  // ML dot — pulse red if medical risk
+  const mlDot = document.getElementById('ml-dot');
+  const mlLbl = document.getElementById('ml-lbl');
+  if (label === 1 || label === 2) {
+    mlDot.style.background = '#ef4444';
+    mlLbl.textContent = 'RISK DETECTED'; mlLbl.style.color='#b91c1c';
+  } else {
+    mlDot.style.background = '#22c55e';
+    mlLbl.textContent = 'ML Active'; mlLbl.style.color='#15803d';
+  }
+
+  // Probability bars
+  const barsEl = document.getElementById('risk-prob-bars');
+  barsEl.innerHTML = CLASS_LABELS.map((name, i) => {
+    const pct = probs[name] || 0;
+    return `<div>
+      <div class="flex justify-between items-center mb-0.5">
+        <span class="text-[10px] font-semibold text-on-surface-variant">${name}</span>
+        <span class="text-[10px] font-black" style="color:${PROB_COLORS[i]}">${pct}%</span>
+      </div>
+      <div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all duration-700" style="width:${pct}%;background:${PROB_COLORS[i]}"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Flash panel border for critical/high
+  const panel = document.getElementById('risk-panel');
+  if (label === 1) {
+    panel.style.borderColor = '#fca5a5';
+    panel.style.boxShadow   = '0 0 0 3px rgba(168,56,54,.08)';
+  } else if (label === 2) {
+    panel.style.borderColor = '#fed7aa';
+    panel.style.boxShadow   = '0 0 0 3px rgba(249,115,22,.08)';
+  } else {
+    panel.style.borderColor = '';
+    panel.style.boxShadow   = '';
+  }
+}
+
+function simulateRisk(scenario) {
+  fetch('/simulate_risk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scenario })
+  }).then(r => r.json()).then(data => {
+    const labels = { heart_attack:'Heart Attack Risk simulated', panic:'Panic Attack simulated', normal:'Normal state restored', false_alarm:'False Alarm simulated' };
+    const types  = { heart_attack:'critical', panic:'warning', normal:'info', false_alarm:'info' };
+    showToast(labels[scenario]||'Simulation triggered', types[scenario]||'info');
+  });
+}
+</script>
+</body>
+</html>
