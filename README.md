@@ -1,4 +1,4 @@
-# SereneCare — Elderly Monitoring System
+# CareWatch — Elderly Monitoring System
 
 AI-powered elderly care monitoring system with real-time video analysis, health risk prediction, fall detection, and voice interaction.
 
