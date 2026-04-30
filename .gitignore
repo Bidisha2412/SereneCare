@@ -2,3 +2,19 @@ venv/
 __pycache__/
 *.pyc
 .env
+
+# Database
+*.db
+
+# Model artifacts (tracked separately or too large for git)
+models/*.pkl
+output/
+*.lgbm
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

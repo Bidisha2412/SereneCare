@@ -46,8 +46,8 @@ FEATURE_COLS = [
     'stability_score', 'hr_variance_proxy'
 ]
 
-MODEL_PATH  = os.path.join(os.path.dirname(__file__), 'health_risk_model.pkl')
-SCALER_PATH = os.path.join(os.path.dirname(__file__), 'health_risk_scaler.pkl')
+MODEL_PATH  = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'models', 'health_risk_model.pkl')
+SCALER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'models', 'health_risk_scaler.pkl')
 
 CONFIDENCE_THRESHOLD = 0.65   # below this → reclassify as False Alarm
 
